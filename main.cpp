@@ -102,26 +102,9 @@ public:
     }
   }
   void buildTrack(){
-    unsigned char programNumber{}; //0-127
-    unsigned char channelNumber{}; //0-15
-    std::cout << "What is the program/instrument number? (0-127)" << std::endl << "  > ";
-    unsigned pn{};
-    std::cin >> pn;
-    while(pn > 127){
-      std::cout << "Enter a valid program number (0-127)" << std::endl
-                << "  > ";
-      std::cin >> pn;
-    }
-    programNumber = pn & 0x000000ff;
-    std::cout << "What is the channel number?" << std::endl << "  > ";
-    unsigned cn{};
-    std::cin >> cn;
-    while(cn > 15){
-      std::cout << "Enter a valid channel number (0-15)" << std::endl
-                << "  > ";
-      std::cin >> cn;
-    }
-    channelNumber = cn & 0x000000ff;
+    unsigned char programNumber{0}; //0-127
+    unsigned char channelNumber{0}; //0-15
+
     std::vector<unsigned char> trackBuffer{};
 
     //header chunk magick
@@ -131,16 +114,6 @@ public:
     //header chunk length, leave at zero value for now but will change later
     for(const auto c: {0x00,0x00,0x00,0x00})
       trackBuffer.push_back(c);
-
-    //channel prefix
-    for(const auto c: {0x00, 0xff, 0x20, 0x01})
-      trackBuffer.push_back(c);
-    trackBuffer.push_back(channelNumber);
-
-    //program change
-    for(const auto c: {0x00, 0xc0 + channelNumber})
-      trackBuffer.push_back(c);
-    trackBuffer.push_back(programNumber);
 
     //events
     unsigned eventSelection{};
@@ -153,6 +126,10 @@ public:
                 << "  3 - Three simultaneous notes" << std::endl
                 << "  4 - Four simultaneous notes" << std::endl
                 << "  9 - Arpeggio" << std::endl
+                << " 10 - Program change" << std::endl
+                << " 11 - Control change" << std::endl
+                << " 12 - Channel change" << std::endl
+                << " 13 - Pitch wheel change" << std::endl
                 << "  > ";
       std::cin >> eventSelection;
       switch(eventSelection){
@@ -161,6 +138,10 @@ public:
         case 3: buildNotes(trackBuffer, channelNumber, 3);break;
         case 4: buildNotes(trackBuffer, channelNumber, 4);break;
         case 9: arpeggio(trackBuffer, channelNumber);break;
+        case 10: programChange(trackBuffer, channelNumber);break;
+        case 11: controlChange(trackBuffer, channelNumber);break;
+        case 12: channelChange(channelNumber);break;
+        case 13: pitchWheelChange(trackBuffer, channelNumber);break;
         default: ;
       }
     }while(eventSelection);
@@ -180,6 +161,76 @@ public:
     //load track buffer into midibuffer
     for(auto c: trackBuffer)
       midiBuffer.push_back(c);
+  }
+  void programChange(std::vector<unsigned char> & trackBuffer, unsigned char channelNumber){
+    unsigned char programNumber{}; //0-127
+    std::cout << "What is the program/instrument number? (0-127)" << std::endl << "  > ";
+    unsigned pn{};
+    std::cin >> pn;
+    while(pn > 127){
+      std::cout << "Enter a valid program number (0-127)" << std::endl
+                << "  > ";
+      std::cin >> pn;
+    }
+    programNumber = pn & 0x000000ff;
+    for(const auto c: {0x00, 0xc0 + channelNumber})
+      trackBuffer.push_back(c);
+    trackBuffer.push_back(programNumber);
+  }
+  void channelChange(unsigned char & channelNumber){
+    std::cout << "What is the channel number?" << std::endl << "  > ";
+    unsigned cn{};
+    std::cin >> cn;
+    while(cn > 15){
+      std::cout << "Enter a valid channel number (0-15)" << std::endl
+                << "  > ";
+      std::cin >> cn;
+    }
+    channelNumber = cn & 0x000000ff;
+  }
+  void controlChange(std::vector<unsigned char> & trackBuffer, unsigned char channelNumber){
+    unsigned char controlNumber{}; //0-15
+    std::cout << "What is the control number?" << std::endl << "  > ";
+    unsigned cn{};
+    std::cin >> cn;
+    controlNumber = cn & 0x000000ff;
+  }
+  void pitchWheelChange(std::vector<unsigned char> & trackBuffer, unsigned char channelNumber){
+    unsigned pitchWheelValue{}; //0-0x4000
+    unsigned deltaTime{};
+    std::cout << "What is the delta time?" << std::endl
+              << "  > ";
+    std::cin >> deltaTime;
+
+    std::array<unsigned char, 4> deltaTimeArr = uintTo7bits(deltaTime);
+
+    std::cout << "What is the Pitch Wheel value? (0-0x3FFF)" << std::endl << "  > ";
+    std::cin >> pitchWheelValue;
+    unsigned char high = (pitchWheelValue & 0b11111110000000) >> 7;
+    unsigned char low = (pitchWheelValue &  0b00000001111111);
+
+      if(deltaTimeArr.at(0)){
+      trackBuffer.push_back(deltaTimeArr.at(0) + 0b10000000);
+      trackBuffer.push_back(deltaTimeArr.at(1) + 0b10000000);
+      trackBuffer.push_back(deltaTimeArr.at(2) + 0b10000000);
+      trackBuffer.push_back(deltaTimeArr.at(3));
+      }
+      else if(deltaTimeArr.at(1)){
+      trackBuffer.push_back(deltaTimeArr.at(1) + 0b10000000);
+      trackBuffer.push_back(deltaTimeArr.at(2) + 0b10000000);
+      trackBuffer.push_back(deltaTimeArr.at(3));
+      }
+      else if(deltaTimeArr.at(2)){
+      trackBuffer.push_back(deltaTimeArr.at(2) + 0b10000000);
+      trackBuffer.push_back(deltaTimeArr.at(3));
+      }
+      else{
+      trackBuffer.push_back(deltaTimeArr.at(3));
+      }
+
+    trackBuffer.push_back(0xe0 + channelNumber);
+    trackBuffer.push_back(low);
+    trackBuffer.push_back(high);
   }
   void buildNotes(std::vector<unsigned char> & trackBuffer, unsigned char channelNumber, unsigned numberOfNotes){
     unsigned deltaTime{};
@@ -348,6 +399,7 @@ public:
 
   }
 };
+
 
 
 int main(int argc, char ** argv){
